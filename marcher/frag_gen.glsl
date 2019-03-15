@@ -84,8 +84,13 @@ float opSineDisplacement(vec3 p, float k) {
 //---Scene Definition---
 float map(vec3 p) {
 	float res = 1e20;
-	res = opUnion(res,opIntersect(sdSphere(opTranslate(p,vec3(1,0,0)),2.0),sdSphere(opTranslate(p,vec3(-1,0,0)),2.0)));
-	res = opUnion(res,sdPlane(opTranslate(p,vec3(0,-2,0))));
+	res = opUnion(res,sdSphere(p,2.0));
+	res = opIntersect(res,sdBox(p,vec3(3.0,3.0,3.0)));
+	res = opSmoothSubtract(res,sdSphere(opTranslate(p,vec3(1,0,0)),0.3),0.3);
+	res = opSmoothSubtract(res,sdSphere(opTranslate(p,vec3(0,1,0)),0.3),0.3);
+	res = opSmoothSubtract(res,sdSphere(opTranslate(p,vec3(0,0,1)),0.3),0.3);
+	res = opSmoothSubtract(res,sdSphere(p,0.7),0.3);
+	res = opSmoothUnion(res,sdPlane(opTranslate(p,vec3(0,-2,0))),0.3);
 	return res;
 }
 // [scene]
