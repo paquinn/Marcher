@@ -4,8 +4,7 @@ from collections import defaultdict
 from typing import Tuple
 import inspect
 
-generator_set = set()
-
+function_stack = []
 
 class vec:
     def __init__(self, *floats):
@@ -38,24 +37,38 @@ def vec2(f1, f2):
 def vec3(f1, f2, f3):
     return vec(f1, f2, f3)
 
+def make_param(arg_type):
+    if arg_type is float:
+        return 'float'
+    elif arg_type is vec3:
+        return 'vec3'
+
+def make_function(return_type, name, params, body):
+    fun = make_param(return_type) + ' ' + name + '(' + ','.join([make_param(arg_type) + ' ' + arg for arg, arg_type in params.items()]) + ')\n'
+    fun += '{\n'
+    fun += body
+    fun += '\n}'
+    return fun
 
 def register_function(fn, dependencies, registry):
     name = fn.__name__
     assert name not in registry, "Primitive %r has already been defined" % name
     params = fn.__annotations__
+    assert 'return' in params, "Function has no return type"
+    return_type = fn.__annotations__['return']
+    fn.__annotations__.pop('return')
     split = inspect.getsource(fn).split('"""')
     assert(len(split) == 3), "%r has no body" % name
     body = split[1].strip()
+
     registry[name] = {
-        'name': name,
-        'dependencies': dependencies,
-        'params': params,
-        'body': body
+        'function': make_function(return_type, name, params, body),
+        'dependencies': list(dependencies)
     }
 
 
 # Base case for recursive compilation
-class _Var:
+class Var:
     def __init__(self, name):
         self.name = name
 
@@ -67,6 +80,22 @@ class _Var:
 
 
 class Function:
+    registry = {}
+
+    @classmethod
+    def register(cls, *dependencies):
+        def decorator(fn):
+            register_function(fn, dependencies, cls.registry)
+
+            def wrapper(*args):
+                combinator = Function(fn.__name__, args)
+                return combinator
+
+            setattr(cls, fn.__name__, wrapper)
+
+            return wrapper
+        return decorator
+
     def __init__(self, name, args):
         self.name = name
         self.args = list(args)
@@ -83,19 +112,15 @@ class Object(Function):
     objects = {}
 
     @classmethod
-    def register(cls):
-        def decorator(fn):
-            # register_function(fn, dependencies, cls.objects)
+    def register(cls, fn):
+        def wrapper(*args, at=None, f=None):
+            partial = Object(fn.__name__, args, at, f)
 
-            def wrapper(*args, at=None, f=None):
-                partial = Object(fn.__name__, args, at, f)
+            return partial
 
-                return partial
+        setattr(cls, fn.__name__, wrapper)
 
-            setattr(cls, fn.__name__, wrapper)
-
-            return wrapper
-        return decorator
+        return wrapper
 
     def __init__(self, name, args, location, f=None):
         super().__init__(name, args)
@@ -122,18 +147,29 @@ class Object(Function):
 
 
 class Combinator(Function):
-    combinators = {}
 
     @classmethod
     def register(cls, *dependencies):
         def decorator(fn):
-            register_function(fn, dependencies, cls.combinators)
+            if 'return' not in fn.__annotations__:
+                fn.__annotations__['return'] = float
+            register_function(fn, dependencies, cls.registry)
 
             def wrapper(*args):
                 combinator = Combinator(fn.__name__, args)
                 return combinator
 
             setattr(cls, fn.__name__, wrapper)
+
+            # TODO hard-coding only two objects can be combined
+            def partial(d2, *args):
+
+                def inner(d1):
+                    all_args = [d1] + [d2] + list(args)
+                    return Combinator(fn.__name__, all_args)
+                return inner
+
+            setattr(Object, fn.__name__, partial)
 
             return wrapper
         return decorator
@@ -143,12 +179,13 @@ class Combinator(Function):
 
 
 class Operator(Function):
-    operators = {}
 
     @classmethod
     def register(cls, *dependencies):
         def decorator(fn):
-            register_function(fn, dependencies, cls.operators)
+            if 'return' not in fn.__annotations__:
+                fn.__annotations__['return'] = vec3
+            register_function(fn, dependencies, cls.registry)
 
             def wrapper(*args, f=None):
                 operator = Operator(fn.__name__, args, f)
@@ -181,12 +218,13 @@ class Operator(Function):
 
 
 class Primitive(Object):
-    primitives = {}
-
     @classmethod
     def register(cls, *dependencies):
         def decorator(fn):
-            register_function(fn, dependencies, cls.primitives)
+
+            if 'return' not in fn.__annotations__:
+                fn.__annotations__['return'] = float
+            register_function(fn, dependencies, cls.registry)
 
             def wrapper(*args, at=None, f=None):
                 partial = Primitive(fn.__name__, args, at, f)
@@ -209,7 +247,7 @@ def Plane(p: vec3): """
 """
 
 @Primitive.register()
-def Sphere(p: vec3, r: float): """
+def Sphere(p: vec3, r: float) -> float: """
     return length(p) - r;
 """
 
@@ -231,17 +269,25 @@ def Intersect(d1: float, d2: float): """
 """
 
 @Combinator.register()
-def Subtract(d1: float, d2: float):  """
+def Subtract(d1: float, d2: float): """
     return max(d1, -d2);
 """
+
 
 @Operator.register()
 def Translate(p: vec3, t: vec3): """
     return p - t; 
 """
 
+@Object.register
+def MyObj(self):
+    self.Union(Sphere(0.4))
+    self.Union(Sphere(0.2), at=vec3(1, 1, 1))
+
 
 def main():
+    u = Object.Union(Sphere(0.4))
+
     # print(Sphere(0.5))
     # print(Registry.r)
     # Registry.Box2((0., 0., 0.))
@@ -258,7 +304,7 @@ def main():
     t1 = Translate(vec3(1, 2, 3))
     t2 = Translate(vec3(3, 2, 1), f=t1)
 
-    term = _Var('p')
+    term = Var('p')
 
     # t3 = Translate('a') * Translate('b') * Translate('c')
     # print(Translate('a', f=Translate('b', f=Translate('c'))))
@@ -271,12 +317,12 @@ def main():
     # print(s(term))
     # s = s(term)
     # print(s)
-    # print(Sphere(0.5, f=t4).at(vec3(1, 2, 3))(_Var('p')))
-    # print(Sphere(0.5, at=vec3(1, 2, 3), f=t4)(_Var('p')))
+    # print(Sphere(0.5, f=t4).at(vec3(1, 2, 3))(Var('p')))
+    # print(Sphere(0.5, at=vec3(1, 2, 3), f=t4)(Var('p')))
 
     # print(Sphere(0.5, f=t4).at(vec3(1, 2, 3)))
-    # print(t1(_Var('p')))
-    # print(t2(_Var('p')))
+    # print(t1(Var('p')))
+    # print(t2(Var('p')))
 
     # s3 = s2.at(vec3(1, 2, 3))
     # print(Translate(vec3(1, 2, 3))(Translate(vec3(1, 2, 3))))
