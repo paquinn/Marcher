@@ -117,8 +117,9 @@ class Object(Function):
 
     @classmethod
     def register(cls, fn):
+        cls.dependencies[fn.__name__] = set()
+
         def wrapper(*args, at=None, f=None):
-            cls.dependencies[fn.__name__] = set()
             partial = Object(fn.__name__, args, at, f)
 
             return partial
@@ -149,6 +150,9 @@ class Object(Function):
         ret = super().__str__()
         self.args.pop(0)
         return ret
+
+    def compile(self):
+        print("Compiling", self.name)
 
 
 class Combinator(Function):
@@ -297,8 +301,8 @@ def Repeat(p: vec3, n: float): """
 """
 
 @Object.register
-def MySphere(self):
-    self.Union(Sphere(0.5))
+def MySphere(p, res):
+    res.Union(Sphere(0.5))(p)  # -> res = Union(res, Sphere(p, 0.5))
 
 
 @Object.register
@@ -307,21 +311,26 @@ def MySphere2(self):
 
 
 @Object.register
-def MySketch(self):
+def MySketch(p, res):
     s1 = MySphere()
-    s2 = MySphere2()
+    s2 = MySphere2(p, res)
 
     u = Union(s1, s2)
 
-    self.Union(s1)
-    self.Union(s2)
-    self.Union(u)
+    # self.Union(s1)
+    p = Translate(vec3(1, 1, 1))
+    res = Union(Union(Union(res, s1), s2), s2)(p)
+    res.Union(Sphere(0.5))  # -> res = Union(res, Sphere(0.5))(p) -> Union(res, Sphere(p, 0.5))
+
+    # self.Union(s2)
+    # self.Union(u)
+#     return res
+
 
 def main():
-    s1 = Sphere(0.5)(Translate(vec3(1, 1, 1)))
-    s2 = Sphere(0.6, at=vec3(2, 2, 2))
-
-    print(Union(s1, s2)(Var('p')))
+    m1 = MySketch()
+    m2 = MySketch()
+    m1.compile()
 
 if __name__ == "__main__":
     main()
