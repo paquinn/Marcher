@@ -1,4 +1,4 @@
-# testing.py
+# DSL.py
 from abc import abstractmethod, ABCMeta
 from collections import defaultdict
 from typing import Tuple
@@ -37,11 +37,13 @@ def vec2(f1, f2):
 def vec3(f1, f2, f3):
     return vec(f1, f2, f3)
 
+
 def make_param(arg_type):
     if arg_type is float:
         return 'float'
     elif arg_type is vec3:
         return 'vec3'
+
 
 def make_function(return_type, name, params, body):
     fun = make_param(return_type) + ' ' + name + '(' + ','.join([make_param(arg_type) + ' ' + arg for arg, arg_type in params.items()]) + ')\n'
@@ -49,6 +51,7 @@ def make_function(return_type, name, params, body):
     fun += body
     fun += '\n}'
     return fun
+
 
 def register_function(fn, dependencies, registry):
     name = fn.__name__
@@ -110,10 +113,12 @@ class Function:
 
 class Object(Function):
     objects = {}
+    dependencies = {}
 
     @classmethod
     def register(cls, fn):
         def wrapper(*args, at=None, f=None):
+            cls.dependencies[fn.__name__] = set()
             partial = Object(fn.__name__, args, at, f)
 
             return partial
@@ -128,7 +133,7 @@ class Object(Function):
         self.f = f
 
     def __call__(self, f):
-        apply = f() if not self.f else self.f(f())
+        apply = f if not self.f else self.f(f)
         return Primitive(self.name, self.args.copy(), self.location, apply)
 
     def at(self, location: vec3):
@@ -162,7 +167,8 @@ class Combinator(Function):
             setattr(cls, fn.__name__, wrapper)
 
             # TODO hard-coding only two objects can be combined
-            def partial(d2, *args):
+            def partial(self, d2, *args):
+                Object.dependencies[self.name].add(fn.__name__)
 
                 def inner(d1):
                     all_args = [d1] + [d2] + list(args)
@@ -173,6 +179,9 @@ class Combinator(Function):
 
             return wrapper
         return decorator
+
+    def at(self, location: vec3):
+        return Combinator(self.name, [arg.at(location) for arg in self.args])
 
     def __call__(self, f):
         return Combinator(self.name, [arg(f) for arg in self.args])
@@ -200,7 +209,7 @@ class Operator(Function):
         self.f = f
 
     def __call__(self, f):
-        apply = f() if not self.f else self.f(f())
+        apply = f if not self.f else self.f(f)
         return Operator(self.name, self.args.copy(), apply)
 
     # TODO Wrong way around
@@ -235,6 +244,9 @@ class Primitive(Object):
             return wrapper
         return decorator
 
+
+def make_object_body():
+    pass
 
 # -------------------------- #
 #      Standard Library      #
@@ -279,62 +291,37 @@ def Translate(p: vec3, t: vec3): """
     return p - t; 
 """
 
-@Object.register
-def MyObj(self):
-    self.Union(Sphere(0.4))
-    self.Union(Sphere(0.2), at=vec3(1, 1, 1))
+@Operator.register()
+def Repeat(p: vec3, n: float): """
+    return mod(p * n) - n * 0.5; 
+"""
 
+@Object.register
+def MySphere(self):
+    self.Union(Sphere(0.5))
+
+
+@Object.register
+def MySphere2(self):
+    self.Union(Sphere(0.6))
+
+
+@Object.register
+def MySketch(self):
+    s1 = MySphere()
+    s2 = MySphere2()
+
+    u = Union(s1, s2)
+
+    self.Union(s1)
+    self.Union(s2)
+    self.Union(u)
 
 def main():
-    u = Object.Union(Sphere(0.4))
+    s1 = Sphere(0.5)(Translate(vec3(1, 1, 1)))
+    s2 = Sphere(0.6, at=vec3(2, 2, 2))
 
-    # print(Sphere(0.5))
-    # print(Registry.r)
-    # Registry.Box2((0., 0., 0.))
-    # Registry.Sphere(0.)
-    # s1 = Primitive.Sphere(0.4)('p')
-    # s2 = Primitive.Sphere(0.3, at=vec3(1., 2., 4.))('p')
-    # t1 = Operator.Translate(vec3(0., 0., 0.), vec3(3., 2., 1.))
-    # print(t1)
-    # print(s1)
-    # print(s2)
+    print(Union(s1, s2)(Var('p')))
 
-    s = Sphere(0.4, f=Translate(vec3(1, 2, 3)))
-
-    t1 = Translate(vec3(1, 2, 3))
-    t2 = Translate(vec3(3, 2, 1), f=t1)
-
-    term = Var('p')
-
-    # t3 = Translate('a') * Translate('b') * Translate('c')
-    # print(Translate('a', f=Translate('b', f=Translate('c'))))
-    # print(Translate('a') * Translate('b') * Translate('c'))
-
-    t1 = Translate('a') * Translate('b') * Translate('c')
-
-    s = Sphere(0.5, at=vec3(1, 2, 3))
-
-    # print(s(term))
-    # s = s(term)
-    # print(s)
-    # print(Sphere(0.5, f=t4).at(vec3(1, 2, 3))(Var('p')))
-    # print(Sphere(0.5, at=vec3(1, 2, 3), f=t4)(Var('p')))
-
-    # print(Sphere(0.5, f=t4).at(vec3(1, 2, 3)))
-    # print(t1(Var('p')))
-    # print(t2(Var('p')))
-
-    # s3 = s2.at(vec3(1, 2, 3))
-    # print(Translate(vec3(1, 2, 3))(Translate(vec3(1, 2, 3))))
-    # print(s2('p'))
-    # print(s3('p'))
-
-
-    # print(vec(1., 3, vec2(1., 3), 4., vec(2., 1.)))
-    # print(2. * vec(1., 3, vec2(1., 3), 4., vec(2., 1.)) * 4)
-
-    u = Union(Intersect(Sphere(1), Sphere(3)), Sphere(2.).at(vec(1, 2, 3)))
-    print(u(term))
-    # print(Sphere(2., at=vec(1, 2, 3))(term))
 if __name__ == "__main__":
     main()
