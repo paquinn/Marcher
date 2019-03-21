@@ -327,23 +327,25 @@ def Translate(p: vec3, t: vec3): """
 """
 
 @Operator.register()
-def Repeat(p: vec3, n: float): """
-    return mod(p * n) - n * 0.5; 
+def Repeat(p: vec3, n: vec3): """
+    return mod(p, n) - n * 0.5; 
 """
 
 class Camera:
-    def __init__(self, **kwargs):
+    def __init__(self, size, **kwargs):
         default = {"MAX_STEPS": 100,
                    "MAX_DISTANCE": 100.0,
                    "MIN_DISTANCE": 0.001,
                    "AA": 1,
-                   "BACKGROUND": 0.5,
+                   "BACKGROUND": vec3(0.7, 0.9, 1.0),
+                   "MATERIAL": vec3(0.5, 0.6, 0.6),
                    "RO": vec3(1, 1, 1),
                    "TA": vec3(0, 0, 0),
                    "LIGHT_POS": vec3(1, 4, 1),
                    "LOOK": 1}
 
         self.params = {**default, **kwargs}
+        self.size = size
 
     def get_statics(self):
         s = ''
@@ -405,13 +407,14 @@ class Camera:
 
     def render(self, shader):
         pygame.init()
-        size = width, height = 650, 350
+        size = width, height = self.size
         screen_center = (size[0] / 2, size[1] / 2)
         fps = 60
-
+        timer = 0
         screen = pygame.display.set_mode(size, DOUBLEBUF | OPENGL)
         pygame.mouse.set_visible(False)
         pygame.mouse.set_pos(screen_center)
+
         clock = pygame.time.Clock()
 
         program = glCreateProgram()
@@ -434,19 +437,30 @@ class Camera:
         glUniform2fv(resID, 1, size)
 
         running = True
+        pause = False
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_p:
+                        pause = not pause
+                    elif event.key == pygame.K_s:
+                        pygame.image.save(screen, 'screenshot.png')
+                    elif event.key == pygame.K_ESCAPE:
+                        sys.exit(0)
+            if not pause:
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+                glUniform1f(timeID, get_ticks() / 1000)
+                m = pygame.mouse.get_pos()
+                glUniform2fv(mouseID, 1, (m[0], height - m[1]))
+                if (get_ticks() - timer > 1000):
+                    print('fps', round(clock.get_fps()))
+                    timer = get_ticks()
+                glRecti(-1, -1, 1, 1)
+                clock.tick(fps)
 
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-            glUniform1f(timeID, get_ticks() / 1000)
-            m = pygame.mouse.get_pos()
-            glUniform2fv(mouseID, 1, (m[0], height - m[1]))
-            print('fps', clock.get_fps())
-            glRecti(-1, -1, 1, 1)
-            clock.tick(fps)
-            pygame.display.flip()
+                pygame.display.flip()
 
 
 def main():
