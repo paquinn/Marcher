@@ -1,6 +1,16 @@
 # marcher.py
 import inspect
 
+import os
+from _ctypes import byref
+from ctypes import create_string_buffer
+
+import pygame
+import sys
+from OpenGL.GL import *
+from pygame.locals import *
+from pygame.time import get_ticks
+
 
 class vec:
     def __init__(self, *floats):
@@ -95,7 +105,7 @@ class Function:
         def decorator(fn):
             fun = cls(fn, dependencies)
             setattr(cls, fun.name, fun)
-            cls.registry[fun._call] = fun
+            cls.registry[fun.name] = fun
             cls.partials[fun._call] = fun._partial_call
             return fun._call
         return decorator
@@ -111,7 +121,7 @@ class Function:
             "r%'s specified return type does not match default" % self.name
 
         self.fn = fn
-        self.dependencies = list(dependencies)
+        self.dependencies = set(dependencies)
 
     def get_body(self):
         split = inspect.getsource(self.fn).split('"""')
@@ -120,6 +130,17 @@ class Function:
 
     def get_dependencies(self):
         return self.dependencies
+
+    def toposort(self, visited, cycle, stack):
+        visited.add(self.name)
+        cycle.add(self.name)
+        for dep in self.get_dependencies():
+            if dep not in visited:
+                self.registry[dep].toposort(visited, cycle, stack)
+            elif dep in cycle:
+                assert False, "Cycle detected, recursion is not supported"
+        stack.insert(0, self.name)
+        cycle.remove(self.name)
 
     def __str__(self):
         fun = make_param(self.return_type)+' '+self.name
@@ -223,7 +244,7 @@ class Object(Primitive):
         # for arg, arg_type in tmp.items():
         #     self.params[arg] = arg_type
         self.lines = []
-        self.usages = set()
+        # self.usages = set()
 
     def _call(self, *args, at=None, f=None):
         return super()._call(*args, at=at, f=f)
@@ -234,7 +255,7 @@ class Object(Primitive):
     def res(self, fn, *args):
         line = (Var('res'), fn(*((Var('res'),) + args))(Var('p')))
         self.lines.append(line)
-        self.usages |= line[1].get_usage()
+        self.dependencies |= line[1].get_usage()
 
     def p(self, fn, *args):
         if isinstance(fn, Operator.Call):
@@ -242,20 +263,28 @@ class Object(Primitive):
         else:
             line = (Var('p'), fn(*args)(Var('p')))
         self.lines.append(line)
-        self.usages |= line[1].get_usage()
+        self.dependencies |= line[1].get_usage()
 
-    def get_body(self):
+    # Lazy evaluation of function for body and dependencies
+    def evaluate(self):
         if not self.lines:
             dummy_args = (len(self.fn.__annotations__)) * [None]
             self.fn(*([self] + dummy_args))
-        code = ''
+
+    def gen_body(self):
+        body = ''
         for var, value in self.lines:
-            code += str(var)+'='+str(value)+';\n'
-        code += 'return '+str(Var('res'))+';'
-        return code
+            body += str(var)+'='+str(value)+';\n'
+        body += 'return '+str(Var('res'))+';'
+        return body
+
+    def get_body(self):
+        self.evaluate()
+        return self.gen_body()
 
     def get_dependencies(self):
-        return self.usages
+        self.evaluate()
+        return self.dependencies
 
 
 # --- Primitives --- #
@@ -302,58 +331,122 @@ def Repeat(p: vec3, n: float): """
     return mod(p * n) - n * 0.5; 
 """
 
+class Camera:
+    def __init__(self, **kwargs):
+        default = {"MAX_STEPS": 100,
+                   "MAX_DISTANCE": 100.0,
+                   "MIN_DISTANCE": 0.001,
+                   "AA": 1,
+                   "BACKGROUND": 0.5,
+                   "RO": vec3(1, 1, 1),
+                   "TA": vec3(0, 0, 0),
+                   "LIGHT_POS": vec3(1, 4, 1),
+                   "LOOK": 1}
 
-@Object.register()
-def MyObj2(self, test: float):
-    self.res(Union, Sphere(Var('test')))
+        self.params = {**default, **kwargs}
 
+    def get_statics(self):
+        s = ''
+        for param, value in self.params.items():
+            s += '#define ' + param + ' ' + str(value) + '\n'
+        return s
 
-@Object.register()
-def MyObj(self):
-    t = Translate(vec3(1, 1, 1))
-    o = MyObj2(0.5)
-    self.res(Union, Sphere(0.5, f=t))
-    self.res(Union, o.at(vec3(1, 1, 1)))
-    self.res(Union, o.at(vec3(1, 1, 1)))
-    self.res(Union, o.at(vec3(1, 1, 1)))
-    self.p(Translate, vec3(1, 1, 1))
-    self.p(Translate(vec3(1, 1, 1)))
+    @staticmethod
+    def print_log(shader):
+        length = c_int()
+        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, byref(length))
 
+        if length.value > 0:
+            log = create_string_buffer(length.value)
+            print(glGetShaderInfoLog(shader))
 
+    def compile_shader(self, source, shader_type):
+        shader = glCreateShader(shader_type)
+        glShaderSource(shader, source)
+        glCompileShader(shader)
 
-    # return Union(res, Sphere(0.5))(p)
-    # s = Sphere(0.5)
-    #
-    # self.res(Union, s.at(vec3(1, 2, 3)))
-    # self.res(Union, s.at(vec3(2, 3, 1)))
-    # self.p(Translate, vec3(1, 1, 1))
-    # self.res(Union, s.at(vec3(3, 1, 2)))
-    # self.res(Union, Sphere(0.5))
+        status = c_int()
+        glGetShaderiv(shader, GL_COMPILE_STATUS, byref(status))
+        if not status.value:
+            self.print_log(shader)
+            glDeleteShader(shader)
+            raise ValueError('Shader compilation failed')
+        return shader
 
+    @staticmethod
+    def insert(into, outside, at):
+        split = outside.index(at)
+        return outside[:split] + into + outside[split:]
 
-# @Object.register()
-# def MySketch(p, res):
-#     res = Union(res, Sphere(0.4))
-#     res = Intersect(res, Sphere(0.2))
-#     res = Subtract(res, MyObj())
-#     return res(p)
+    def compile(self, obj):
+        statics = self.get_statics()
+        stack = []
+        obj.toposort(set(), set(), stack)
+        functions = ''
+        for fn in reversed(stack):
+            functions += str(Function.registry[fn]) + '\n'
+        frag_dir = os.path.join(os.path.dirname(__file__), 'marcher.glsl')
+        f_shader = open(frag_dir).read()
+        f_shader = self.insert(statics, f_shader, '// [statics]')
+        f_shader = self.insert(functions, f_shader, '// [functions]')
+
+        return f_shader
+
+    def view(self, obj):
+        shader = self.compile(obj)
+        self.render(shader)
+
+    def save(self, obj, file):
+        shader = self.compile(obj)
+        open(file, 'w').write(obj)
+
+    def render(self, shader):
+        pygame.init()
+        size = width, height = 650, 350
+        screen_center = (size[0] / 2, size[1] / 2)
+        fps = 60
+
+        screen = pygame.display.set_mode(size, DOUBLEBUF | OPENGL)
+        pygame.mouse.set_visible(False)
+        pygame.mouse.set_pos(screen_center)
+        clock = pygame.time.Clock()
+
+        program = glCreateProgram()
+
+        fragment_shader = None
+
+        fragment_shader = self.compile_shader(shader, GL_FRAGMENT_SHADER)
+        glAttachShader(program, fragment_shader)
+
+        glLinkProgram(program)
+
+        if fragment_shader:
+            glDeleteShader(fragment_shader)
+
+        resID = glGetUniformLocation(program, "iResolution")
+        mouseID = glGetUniformLocation(program, "iMouse")
+        timeID = glGetUniformLocation(program, "iTime")
+
+        glUseProgram(program)
+        glUniform2fv(resID, 1, size)
+
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    sys.exit()
+
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            glUniform1f(timeID, get_ticks() / 1000)
+            m = pygame.mouse.get_pos()
+            glUniform2fv(mouseID, 1, (m[0], height - m[1]))
+            print('fps', clock.get_fps())
+            glRecti(-1, -1, 1, 1)
+            clock.tick(fps)
+            pygame.display.flip()
 
 
 def main():
-    # print(MyObj)
-    print(Object.MyObj2)
-    print(Object.MyObj)
-
-    print(Object.MyObj2.get_dependencies())
-    print(Object.MyObj.get_dependencies())
-    #
-    # t = Translate(vec3(1, 1, 1))
-    #
-    # print(t(Var('p')))
-    # u = Union(Sphere(0.3), Sphere(0.2, at=vec3(1, 1, 1)))
-
-    # print(u(Var('p')).get_usage())
-
-
+    pass
 if __name__ == '__main__':
     main()
