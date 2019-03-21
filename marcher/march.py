@@ -375,17 +375,20 @@ class Camera:
 
     @staticmethod
     def insert(into, outside, at):
-        split = outside.index(at)
-        return outside[:split] + into + outside[split:]
+
+        split = outside.split(at)
+        assert len(split) == 2, "Can only split at one location not %r" % str(len(split) - 1)
+        return split[0] + into + split[1]
 
     def compile(self, obj):
         statics = self.get_statics()
+        statics += '#define DE(x) '+obj.name+'((x),1e20)'
         stack = []
         obj.toposort(set(), set(), stack)
         functions = ''
         for fn in reversed(stack):
             functions += str(Function.registry[fn]) + '\n'
-        frag_dir = os.path.join(os.path.dirname(__file__), 'marcher.glsl')
+        frag_dir = os.path.join(os.path.dirname(__file__), 'march.glsl')
         f_shader = open(frag_dir).read()
         f_shader = self.insert(statics, f_shader, '// [statics]')
         f_shader = self.insert(functions, f_shader, '// [functions]')
@@ -398,7 +401,7 @@ class Camera:
 
     def save(self, obj, file):
         shader = self.compile(obj)
-        open(file, 'w').write(obj)
+        open(file, 'w').write(shader)
 
     def render(self, shader):
         pygame.init()
