@@ -1,16 +1,13 @@
 # Marcher language
 Basic DSL to support creating scenes for a ray marching renderer.
-Output goes into frag_gen.glsl, paste this into a Shadertoy.com window to run.
 
-## Primitives models supported
-* Plane
-* Sphere
-* Box
-
-## Combinators
-* Union
-* Intersect
-* Box
-
-## Transformers
-* Translate
+# Install
+Copy the `march.py` file into your directors and add
+ 
+ `from marcher import *` to your python file. Everything else should then work automatically
+ 
+ Define some Objects make a camera and view your creations.
+ 
+ Examples can be found at `/examples` 
+ 
+ 

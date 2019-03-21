@@ -169,8 +169,11 @@ class vec:
                 self.floats.extend(f.floats)
         self.dim = len(self.floats)
 
+    def get_type(self):
+        return'vec' + str(self.dim)
+
     def __str__(self):
-        return 'vec' + str(self.dim) + '(' + ','.join([str(f) for f in self.floats]) + ')'
+        return self.get_type() + '(' + ','.join([str(f) for f in self.floats]) + ')'
 
     def __mul__(self, scalar):
         # Make sure its a float
@@ -194,6 +197,8 @@ def make_param(arg_type):
         return 'float'
     elif arg_type is vec3:
         return 'vec3'
+    elif arg_type is vec2:
+        return 'vec2'
 
 
 # Base case for recursive compilation
@@ -447,6 +452,24 @@ def Sphere(p: vec3, r: float) -> float: """
 def Box(p: vec3, b: vec3): """
     vec3 d = abs(p) - b;
     return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
+"""
+
+@Primitive.register()
+def CylinderY(p: vec3, h: vec2): """
+    vec2 d = abs(vec2(length(p.xz),p.y)) - h;
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0)); 
+"""
+
+@Primitive.register()
+def CylinderZ(p: vec3, h: vec2): """
+    vec2 d = abs(vec2(length(p.xy),p.z)) - h;
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+"""
+
+@Primitive.register()
+def CylinderX(p: vec3, h: vec2): """
+    vec2 d = abs(vec2(length(p.yz),p.x)) - h;
+    return min(max(d.x,d.y),0.0) + length(max(d,0.0));
 """
 
 # --- Combinators --- #
