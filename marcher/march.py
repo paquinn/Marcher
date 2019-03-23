@@ -316,6 +316,9 @@ class Primitive(Function):
         def at(self, location):
             return self.__class__(self.name, self.args.copy(), location, self.f)
 
+        def f(self, f):
+            return self.__class__(self.name, self.args.copy(), self.location, f(self.f))
+
         def wrap_location(self):
             if self.location:
                 return Translate(self.location, f=self.f)
@@ -338,10 +341,13 @@ class Combinator(Function):
     class Call(Function.Call):
 
         def at(self, location: vec3):
-            return self.__class__(self.name, [arg.at(location) for arg in self.args])
+            return self.__class__(self.name, [arg.at(location) if isinstance(arg, Function.Call) else arg for arg in self.args])
+
+        def f(self, f):
+            return self.__class__(self.name, [arg.f(f) if isinstance(arg, Function.Call) else arg for arg in self.args])
 
         def __call__(self, f):
-            return self.__class__(self.name, [arg(f) for arg in self.args])
+            return self.__class__(self.name, [arg(f) if isinstance(arg, Function.Call) else arg for arg in self.args])
 
     @staticmethod
     def _default_return():
@@ -623,7 +629,7 @@ class Camera:
                 glUniform1f(timeID, get_ticks() / 1000)
                 m = pygame.mouse.get_pos()
                 glUniform2fv(mouseID, 1, (m[0], height - m[1]))
-                if (get_ticks() - timer > 1000):
+                if get_ticks() - timer > 1000:
                     print('fps', round(clock.get_fps()))
                     timer = get_ticks()
                 glRecti(-1, -1, 1, 1)
@@ -633,6 +639,6 @@ class Camera:
 
 
 def main():
-    pass
+    print("Usage: $python [your program]")
 if __name__ == '__main__':
     main()
