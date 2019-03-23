@@ -1,10 +1,6 @@
 # mirror.py
 from marcher.march import *
 
-@Operator.register()
-def Mirror(p: vec3): """
-    return abs(p);
-"""
 
 @Object.register()
 def MyObject(self):

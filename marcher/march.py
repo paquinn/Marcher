@@ -167,6 +167,8 @@ class vec:
                 self.floats.append(float(f))
             elif type(f) is vec:
                 self.floats.extend(f.floats)
+            else:
+                self.floats.append(f)
         self.dim = len(self.floats)
 
     def get_type(self):
@@ -503,6 +505,11 @@ def Translate(p: vec3, t: vec3): """
 @Operator.register()
 def Repeat(p: vec3, n: vec3): """
     return mod(p, n) - n * 0.5; 
+"""
+
+@Operator.register()
+def Mirror(p: vec3): """
+    return abs(p);
 """
 
 class Camera:

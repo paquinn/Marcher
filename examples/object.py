@@ -18,20 +18,6 @@ def MyScene(self):
             pos = 2 * vec3(i, j, 0)
             self.res(Union, mo.at(pos))
 
-# print(Function.registry.keys())
-# Object.MyScene.evaluate()
-# print(Object.MyScene.get_dependencies())
-# print(Object.MyObject.get_dependencies())
-# for var, statement in Object.MyScene.lines:
-#     print(statement)
-# print(Object.MyScene.get_dependencies())
-# c = Camera((650, 380), AA=2)
-# c.save(Object.MyScene, "gen.glsl")
-# c.view(Object.MyScene)
-
-# u = Union(Intersect(Sphere(1.), Box(vec3(1, 1, 1))), Sphere(2.))(Var('p'))
-# print(u.get_usage())
-
-stack = []
-Object.MyScene.toposort(set(), set(), stack)
-print(stack)
+c = Camera((650, 380), AA=2)
+c.save(Object.MyScene, "gen.glsl")
+c.view(Object.MyScene)
